@@ -274,8 +274,8 @@ static void butterflies(int32_t* bx, int32_t* by, int32_t firstLevel, int32_t la
     // Loop though the decimation levels
     // lastLevel is logN - 1
     for (int32_t level = firstLevel; level <= lastLevel; level++) {
-        int32_t flightIndex = 0;
 
+        int32_t flightIndex = 0;
         // Loop through each flight on a level.
         for (int32_t flight = 0; flight < noFlights; flight++) {
             int32_t wIndex = 0;

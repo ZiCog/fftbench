@@ -1,1 +1,10 @@
 fftbench.c
+>compiler=C
+>memtype=lmm
+>optimize=-Os
+>-m32bit-doubles
+>-Wall
+>-fno-exceptions
+>-Dprintf=__simple_printf
+>defs::-std=c99 -fopenmp
+>BOARD::HUB

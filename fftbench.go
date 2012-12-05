@@ -12,7 +12,7 @@ http://cnx.org/content/m12016/latest/.
 It is written as a direct implementation of the discussion and diagrams on that page
 with an emphasis on clarity and ease of understanding rather than speed.
 
-Michael Rychlik. 2011-02-27
+Michael Rychlik. 2012-12-04
 
 This file is released under the terms of the MIT license. See below.
 
@@ -82,7 +82,6 @@ func fft_bench() {
             go func(slice uint32) {
                 s := FFT_SIZE * slice / slices
                 e := s + FFT_SIZE*1/slices
-                //fmt.Printf("0x%04x, %2d,         %2d,        %2d\n", s, firstLevel, lastLevel, slices)
                 butterflies(bx[s:e], by[s:e], firstLevel, lastLevel, slices)
                 c <- 1
             }(slice)
@@ -201,17 +200,13 @@ func decimate() {
 // Apply FFT butterflies to N complex samples in buffers bx and by, in time decimated order!
 // Resulting FFT is produced in bx and by in the correct order.
 func butterflies(bx []int32, by []int32, firstLevel uint32, lastLevel uint32, slices uint32) {
-    //    fmt.Println("length = ", len(bx), "firstLevel =", firstLevel, "lastLevel = ", lastLevel, "slices = ", slices)
+
     flightSize := uint32(1) << firstLevel
-    noFlights := uint32(len(bx)) >> 1
-
     wDelta := FFT_SIZE / (2 * (1 << firstLevel))
-    noFlights = wDelta / slices
-
-    //    fmt.Println("flightSize = ", flightSize, "noFlights = ", noFlights, "wDelta = ", wDelta)
+    noFlights := wDelta / slices
 
     // Loop though the decimation levels
-    for level := firstLevel; level <= lastLevel; level++ { // lastLevel is logN - 1
+    for level := firstLevel; level <= lastLevel; level++ { 
 
         flightIndex := uint32(0)
         // Loop through each flight on a level.
@@ -220,14 +215,11 @@ func butterflies(bx []int32, by []int32, firstLevel uint32, lastLevel uint32, sl
             wIndex := uint32(0)
             // Loop through butterflies within a flight.
             for butterfly := uint32(0); butterfly < flightSize; butterfly++ {
-
                 b0 := flightIndex + butterfly
                 b1 := b0 + flightSize
 
                 // At last...the butterfly.
-                //fmt.Println("...", b0, b1)
                 a := bx[b1] // Get X[b1]
-                //fmt.Println("...")
                 b := by[b1]
 
                 c := wx[wIndex] // Get W[wIndex]
