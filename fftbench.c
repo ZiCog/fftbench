@@ -14,7 +14,6 @@
 // It is written as a direct implementation of the discussion and diagrams on that page
 // with an emphasis on clarity and ease of understanding rather than speed.
 //
-// Michael Rychlik. 2011-02-27
 //
 // This file is released under the terms of the MIT license. See below.
 //
