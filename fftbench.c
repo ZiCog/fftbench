@@ -1,5 +1,5 @@
 //
-// fft_bench_omp.c
+// fftbench.c
 //
 // A simple FFT implmentation for use as a micro-controller benchmark. This is an in-place
 // Radix-2 Decimation In Time FFT using fixed point arithmetic.
