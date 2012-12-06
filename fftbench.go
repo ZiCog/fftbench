@@ -45,7 +45,7 @@ var by [FFT_SIZE]int32
 // Return a timestamp in microsecond resolution.
 func time_us() int64 {
     t := time.Now()
-    return t.UnixNano() / 1000000
+    return t.UnixNano() / 1000
 }
 
 // The main line of fft bench
