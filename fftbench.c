@@ -169,22 +169,21 @@ void fft_bench() {
 }
 
 // Integer square root
-static int sqrti(int parm1) {
-    int parm2 = 0;
-    int parm3 = 1 << 30;
-    while (parm3) {
-        parm2 |= parm3;
-        if (parm2 <= parm1) {
-            parm1 -= parm2;
-            parm2 += parm3;
+static int sqrti(int i) {
+    int s = 0;
+    int t = 1 << 30;
+    while (t) {
+        s |= t;
+        if (s <= i) {
+            i -= s;
+            s += t;
         }
         else
-            parm2 -= parm3;
-        parm2 >>= 1;
-        parm3 >>= 2;
+            s -= t;
+        s >>= 1;
+        t >>= 2;
     }
-    parm1 = parm2;
-    return(parm1);
+    return(s);
 }
 
 static void printSpectrum() {

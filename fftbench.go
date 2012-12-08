@@ -106,23 +106,21 @@ func fft_bench() {
 }
 
 // Integer square root
-func sqrti(parm1 int32) int32 {
-    var parm2 int32 = 0
-    var parm3 int32 = 1 << 30
-    parm2 = 0
-    parm3 = 1 << 30
-    for parm3 != 0 {
-        parm2 |= parm3
-        if parm2 <= parm1 {
-            parm1 -= parm2
-            parm2 += parm3
+func sqrti(i int32) int32 {
+    var s int32 = 0
+    var t int32 = 1 << 30
+    for t != 0 {
+        s |= t
+        if s <= i {
+            i -= s
+            s += t
         } else {
-            parm2 -= parm3
+            s -= t
         }
-        parm2 >>= 1
-        parm3 >>= 2
+        s >>= 1
+        t >>= 2
     }
-    return (parm2)
+    return (s)
 }
 
 // Print the spectrum in 
