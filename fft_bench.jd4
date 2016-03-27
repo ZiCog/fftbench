@@ -1,0 +1,538 @@
+
+\ ----------------------------------------------------------------------------------------------------------------------
+\
+\ fft_bench.spin
+\
+\ A simple FFT implmentation for use as a micro-controller benchmark. This is an in-place
+\ Radix-2 Decimation In Time FFT using fixed point arithmetic.
+\
+\ When reimplementing this benchmark in other languages please honour the intention of
+\ this benchmark by following the algorithm as closely as possible. This version is based off
+\ of bech_fft.spin which is to be regarded as the "mother" of all versions of this benchmark
+\ in other languages. 
+\
+\ This FFT was developed from the description by Douglas L. Jones at
+\ http://cnx.org/content/m12016/latest/.
+\ It is written as a direct implementation of the discussion and diagrams on that page
+\ with an emphasis on clarity and ease of understanding rather than speed.
+\
+\ Michael Rychlik. 2011-02-27
+\
+\ This file is released under the terms of the MIT license. See below.
+\
+\ Credits:
+\
+\     A big thank you to Dave Hein for clearing up some issues during a great FFT debate on
+\     the Parallax Inc Propller discussion forum:
+\     http://forums.parallax.com/showthread.php?127306-Fourier-for-dummies-under-construction
+\
+\ History:
+\
+\ 2011-02-27    v1.0  Initial version.
+\ 2011-07-19    Converted to JDForth.
+\ ----------------------------------------------------------------------------------------------------------------------
+
+\ ----------------------------------------------------------------------------------------------------------------------
+NEEDS System
+NEEDS SimplexSerial
+NEEDS Debug
+
+\ Specify size of FFT buffer here with length and log base 2 of the length.
+\ N.B. Changing this will require changing the "twiddle factor" tables.
+\     and may also require changing the fixed point format (if going bigger)
+1024 CON16 FFT_SIZE
+10   CON16 LOG2_FFT_SIZE
+
+\ cos and sin parts of the signal to be analysed
+\ Result is written back to here.
+\ Just write input samples to bx and zero all by.
+CREATE bx 1025 ALLOT
+CREATE by 1025 ALLOT
+
+: bx[] ( offset -- addr ) 4* bx >ADDR32 + ;
+: by[] ( offset -- addr ) 4* by >ADDR32 + ;
+
+\ ----------------------------------------------------------------------------------------------------------------------
+
+\ ----------------------------------------------------------------------------------------------------------------------
+: sqrti ( inval -- outval )
+  \   DUP < 0 IF ;; THEN
+     0                 \ parm2 = 0;
+     30 |< >A          \ parm3 = 1 << 30;
+     BEGIN	
+     A@ WHILE
+         A@ or         \ parm2 |= parm3;
+         2DUP SWAP <= IF    \ if (parm2 <= parm1)
+                       \ {
+             DUP >A -  \     parm1 -= parm2;
+             A> A@ +   \     parm2 += parm3;
+                       \ }
+         ELSE          \ else
+             A@ -      \     parm2 -= parm3;
+         THEN
+         2/            \ parm2 >>= 1;
+         A> 4/ >A      \ parm3 >>= 2
+     REPEAT
+     A-DROP
+     NIP               \ parm1 = parm2;
+                       \ return(parm1);
+;
+
+\ ----------------------------------------------------------------------------------------------------------------------
+
+\ ----------------------------------------------------------------------------------------------------------------------
+: printSpectrum ( -- )
+    \ Spectrum is available in first half of the buffers after FFT.
+    ." Freq.    Magnitude" CRLF
+    FFT_SIZE 2/ 1+ 0 DO
+        \ Frequency magnitde is square root of cos part sqaured plus sin part squared
+        ( real = ) i bx[] @ FFT_SIZE /
+        ( imag = ) i by[] @ FFT_SIZE /
+        \ magnitude = sqrti ((real * real) + (imag * imag));
+        dup * swap dup * + sqrti
+        ?dup IF
+            i . . CRLF   \ Show the index and the magnitude
+        THEN
+    LOOP
+;
+\ ----------------------------------------------------------------------------------------------------------------------
+
+\ ----------------------------------------------------------------------------------------------------------------------
+\ For testing define 16 samples  of an input wave form here.
+CREATE input[]  4096 , 3784 , 2896 , 1567 , 0 , -1567 , -2896 , -3784 , -4096 , 
+    -3784 , -2896 , -1567 , 0 , 1567 , 2896 , 3784 ,
+
+\ ----------------------------------------------------------------------------------------------------------------------
+
+\ ----------------------------------------------------------------------------------------------------------------------
+\ Fill buffer bx with samples of of an imput signal and clear by.
+: fillInput
+    FFT_SIZE 0 DO
+        i bx[] >A
+        \ Clear X array.
+        0 A@ !
+
+        \ Two frequencies of the waveform defined in input
+        i 3 * 15 and 4* input[] + @ 4/ A@ @ + A@ !
+        i 5 * 15 and 4* input[] + @ 4/ A@ @ + A@ !
+
+        \ A square wave signal
+\        A@ @ 4096 8 /
+\        i 64 and IF + ELSE - THEN
+\        A@ !
+
+        \ The highest frequency
+        A@ @ 4096 8 /
+        i 1 and IF + ELSE - THEN
+        A@ !
+
+        \ A DC level
+        A@ @ 4096 8 / + A@ !
+
+        \ All done with the X array
+        A-DROP
+
+        \ Clear Y array.
+        0 i by[] !
+    LOOP
+;
+\ ----------------------------------------------------------------------------------------------------------------------
+
+\ ----------------------------------------------------------------------------------------------------------------------
+: decimate ( -- )
+    \ int32_t i, revi, tx1, ty1;
+    \ Radix-2 decimation in time.
+    \ Moves every sample of bx and by to a postion given by
+    \ reversing the bits of its original array index.
+    \ for (i = 0; i <= FFT_SIZE - 1; i++)
+    \ {
+    \     revi = bitReverse (i, LOG2_FFT_SIZE);
+    \     if (i < revi)
+    \     {
+    \         tx1 = bx[i];
+    \         ty1 = by[i];
+    \         bx[i] = bx[revi];
+    \         by[i] = by[revi];
+    \         bx[revi] = tx1;
+    \         by[revi] = ty1;
+    \     }
+    \ }
+    FFT_SIZE 0 DO
+        ( revi = ) i LOG2_FFT_SIZE >< >A
+        i A@ < IF
+            i bx[] DUP >R @    
+            A@ bx[] DUP >R @
+            SWAP R> ! R> !
+
+            i by[] DUP >R @    
+            A@ by[] DUP >R @
+            SWAP R> ! R> !
+        THEN
+        A-DROP
+    LOOP	
+;
+\ ----------------------------------------------------------------------------------------------------------------------
+
+\ ----------------------------------------------------------------------------------------------------------------------
+CREATE (wx_wy)
+\ int16_t wx[] = {
+     4095 H,  4094 H,  4094 H,  4094 H,  4093 H,  4093 H,  4092 H,  4091 H,  
+     4090 H,  4088 H,  4087 H,  4085 H,  4083 H,  4081 H,  4079 H,  4077 H, 
+     4075 H,  4072 H,  4070 H,  4067 H,  4064 H,  4061 H,  4057 H,  4054 H,  
+     4050 H,  4046 H,  4042 H,  4038 H,  4034 H,  4030 H,  4025 H,  4021 H, 
+     4016 H,  4011 H,  4006 H,  4000 H,  3995 H,  3989 H,  3984 H,  3978 H, 
+     3972 H,  3966 H,  3959 H,  3953 H,  3946 H,  3939 H,  3932 H,  3925 H, 
+     3918 H,  3911 H,  3903 H,  3896 H,  3888 H,  3880 H,  3872 H,  3864 H, 
+     3855 H,  3847 H,  3838 H,  3829 H,  3820 H,  3811 H,  3802 H,  3792 H, 
+     3783 H,  3773 H,  3763 H,  3753 H,  3743 H,  3733 H,  3723 H,  3712 H, 
+     3701 H,  3691 H,  3680 H,  3668 H,  3657 H,  3646 H,  3634 H,  3623 H, 
+     3611 H,  3599 H,  3587 H,  3575 H,  3563 H,  3550 H,  3537 H,  3525 H, 
+     3512 H,  3499 H,  3486 H,  3473 H,  3459 H,  3446 H,  3432 H,  3418 H, 
+     3404 H,  3390 H,  3376 H,  3362 H,  3348 H,  3333 H,  3318 H,  3304 H, 
+     3289 H,  3274 H,  3258 H,  3243 H,  3228 H,  3212 H,  3197 H,  3181 H, 
+     3165 H,  3149 H,  3133 H,  3117 H,  3100 H,  3084 H,  3067 H,  3051 H, 
+     3034 H,  3017 H,  3000 H,  2983 H,  2965 H,  2948 H,  2930 H,  2913 H, 
+     2895 H,  2877 H,  2859 H,  2841 H,  2823 H,  2805 H,  2787 H,  2768 H, 
+     2750 H,  2731 H,  2712 H,  2693 H,  2674 H,  2655 H,  2636 H,  2617 H, 
+     2597 H,  2578 H,  2558 H,  2539 H,  2519 H,  2499 H,  2479 H,  2459 H, 
+     2439 H,  2419 H,  2398 H,  2378 H,  2357 H,  2337 H,  2316 H,  2295 H, 
+     2275 H,  2254 H,  2233 H,  2211 H,  2190 H,  2169 H,  2148 H,  2126 H, 
+     2105 H,  2083 H,  2061 H,  2040 H,  2018 H,  1996 H,  1974 H,  1952 H, 
+     1930 H,  1908 H,  1885 H,  1863 H,  1841 H,  1818 H,  1796 H,  1773 H, 
+     1750 H,  1728 H,  1705 H,  1682 H,  1659 H,  1636 H,  1613 H,  1590 H, 
+     1567 H,  1543 H,  1520 H,  1497 H,  1473 H,  1450 H,  1426 H,  1403 H, 
+     1379 H,  1355 H,  1332 H,  1308 H,  1284 H,  1260 H,  1236 H,  1212 H, 
+     1188 H,  1164 H,  1140 H,  1116 H,  1092 H,  1067 H,  1043 H,  1019 H, 
+      994 H,   970 H,   946 H,   921 H,   897 H,   872 H,   848 H,   823 H, 
+      798 H,   774 H,   749 H,   724 H,   700 H,   675 H,   650 H,   625 H, 
+      600 H,   575 H,   551 H,   526 H,   501 H,   476 H,   451 H,   426 H, 
+      401 H,   376 H,   351 H,   326 H,   301 H,   276 H,   251 H,   226 H, 
+      200 H,   175 H,   150 H,   125 H,   100 H,    75 H,    50 H,    25 H, 
+\ N.B. These two tables must be contiguous in memory 
+\ int16_t wy[] = {
+        0 H,   -25 H,   -50 H,   -75 H,  -100 H,  -125 H,  -150 H,  -175 H, 
+     -200 H,  -226 H,  -251 H,  -276 H,  -301 H,  -326 H,  -351 H,  -376 H, 
+     -401 H,  -426 H,  -451 H,  -476 H,  -501 H,  -526 H,  -551 H,  -576 H, 
+     -600 H,  -625 H,  -650 H,  -675 H,  -700 H,  -724 H,  -749 H,  -774 H, 
+     -798 H,  -823 H,  -848 H,  -872 H,  -897 H,  -921 H,  -946 H,  -970 H, 
+     -995 H, -1019 H, -1043 H, -1067 H, -1092 H, -1116 H, -1140 H, -1164 H, 
+    -1188 H, -1212 H, -1236 H, -1260 H, -1284 H, -1308 H, -1332 H, -1355 H, 
+    -1379 H, -1403 H, -1426 H, -1450 H, -1473 H, -1497 H, -1520 H, -1543 H, 
+    -1567 H, -1590 H, -1613 H, -1636 H, -1659 H, -1682 H, -1705 H, -1728 H, 
+    -1750 H, -1773 H, -1796 H, -1818 H, -1841 H, -1863 H, -1885 H, -1908 H, 
+    -1930 H, -1952 H, -1974 H, -1996 H, -2018 H, -2040 H, -2062 H, -2083 H, 
+    -2105 H, -2126 H, -2148 H, -2169 H, -2190 H, -2212 H, -2233 H, -2254 H, 
+    -2275 H, -2295 H, -2316 H, -2337 H, -2357 H, -2378 H, -2398 H, -2419 H, 
+    -2439 H, -2459 H, -2479 H, -2499 H, -2519 H, -2539 H, -2558 H, -2578 H, 
+    -2597 H, -2617 H, -2636 H, -2655 H, -2674 H, -2693 H, -2712 H, -2731 H, 
+    -2750 H, -2768 H, -2787 H, -2805 H, -2823 H, -2841 H, -2859 H, -2877 H, 
+    -2895 H, -2913 H, -2930 H, -2948 H, -2965 H, -2983 H, -3000 H, -3017 H, 
+    -3034 H, -3051 H, -3067 H, -3084 H, -3100 H, -3117 H, -3133 H, -3149 H, 
+    -3165 H, -3181 H, -3197 H, -3212 H, -3228 H, -3243 H, -3258 H, -3274 H, 
+    -3289 H, -3304 H, -3318 H, -3333 H, -3348 H, -3362 H, -3376 H, -3390 H, 
+    -3404 H, -3418 H, -3432 H, -3446 H, -3459 H, -3473 H, -3486 H, -3499 H, 
+    -3512 H, -3525 H, -3537 H, -3550 H, -3563 H, -3575 H, -3587 H, -3599 H, 
+    -3611 H, -3623 H, -3634 H, -3646 H, -3657 H, -3669 H, -3680 H, -3691 H, 
+    -3701 H, -3712 H, -3723 H, -3733 H, -3743 H, -3753 H, -3763 H, -3773 H, 
+    -3783 H, -3792 H, -3802 H, -3811 H, -3820 H, -3829 H, -3838 H, -3847 H, 
+    -3855 H, -3864 H, -3872 H, -3880 H, -3888 H, -3896 H, -3903 H, -3911 H, 
+    -3918 H, -3925 H, -3932 H, -3939 H, -3946 H, -3953 H, -3959 H, -3966 H, 
+    -3972 H, -3978 H, -3984 H, -3989 H, -3995 H, -4000 H, -4006 H, -4011 H, 
+    -4016 H, -4021 H, -4025 H, -4030 H, -4034 H, -4038 H, -4043 H, -4046 H, 
+    -4050 H, -4054 H, -4057 H, -4061 H, -4064 H, -4067 H, -4070 H, -4072 H, 
+    -4075 H, -4077 H, -4079 H, -4081 H, -4083 H, -4085 H, -4087 H, -4088 H, 
+    -4090 H, -4091 H, -4092 H, -4093 H, -4093 H, -4094 H, -4094 H, -4094 H, 
+    -4094 H, -4094 H, -4094 H, -4094 H, -4093 H, -4093 H, -4092 H, -4091 H, 
+    -4090 H, -4088 H, -4087 H, -4085 H, -4083 H, -4081 H, -4079 H, -4077 H, 
+    -4075 H, -4072 H, -4070 H, -4067 H, -4064 H, -4061 H, -4057 H, -4054 H, 
+    -4050 H, -4046 H, -4042 H, -4038 H, -4034 H, -4030 H, -4025 H, -4021 H, 
+    -4016 H, -4011 H, -4006 H, -4000 H, -3995 H, -3989 H, -3984 H, -3978 H, 
+    -3972 H, -3966 H, -3959 H, -3953 H, -3946 H, -3939 H, -3932 H, -3925 H, 
+    -3918 H, -3911 H, -3903 H, -3896 H, -3888 H, -3880 H, -3872 H, -3863 H, 
+    -3855 H, -3847 H, -3838 H, -3829 H, -3820 H, -3811 H, -3802 H, -3792 H, 
+    -3783 H, -3773 H, -3763 H, -3753 H, -3743 H, -3733 H, -3723 H, -3712 H, 
+    -3701 H, -3691 H, -3680 H, -3668 H, -3657 H, -3646 H, -3634 H, -3623 H, 
+    -3611 H, -3599 H, -3587 H, -3575 H, -3562 H, -3550 H, -3537 H, -3525 H, 
+    -3512 H, -3499 H, -3486 H, -3473 H, -3459 H, -3446 H, -3432 H, -3418 H, 
+    -3404 H, -3390 H, -3376 H, -3362 H, -3347 H, -3333 H, -3318 H, -3304 H, 
+    -3289 H, -3274 H, -3258 H, -3243 H, -3228 H, -3212 H, -3197 H, -3181 H, 
+    -3165 H, -3149 H, -3133 H, -3117 H, -3100 H, -3084 H, -3067 H, -3050 H, 
+    -3034 H, -3017 H, -3000 H, -2983 H, -2965 H, -2948 H, -2930 H, -2913 H, 
+    -2895 H, -2877 H, -2859 H, -2841 H, -2823 H, -2805 H, -2787 H, -2768 H, 
+    -2749 H, -2731 H, -2712 H, -2693 H, -2674 H, -2655 H, -2636 H, -2617 H, 
+    -2597 H, -2578 H, -2558 H, -2539 H, -2519 H, -2499 H, -2479 H, -2459 H, 
+    -2439 H, -2419 H, -2398 H, -2378 H, -2357 H, -2337 H, -2316 H, -2295 H, 
+    -2275 H, -2254 H, -2233 H, -2211 H, -2190 H, -2169 H, -2148 H, -2126 H, 
+    -2105 H, -2083 H, -2061 H, -2040 H, -2018 H, -1996 H, -1974 H, -1952 H, 
+    -1930 H, -1908 H, -1885 H, -1863 H, -1841 H, -1818 H, -1796 H, -1773 H, 
+    -1750 H, -1728 H, -1705 H, -1682 H, -1659 H, -1636 H, -1613 H, -1590 H, 
+    -1567 H, -1543 H, -1520 H, -1497 H, -1473 H, -1450 H, -1426 H, -1403 H, 
+    -1379 H, -1355 H, -1332 H, -1308 H, -1284 H, -1260 H, -1236 H, -1212 H, 
+    -1188 H, -1164 H, -1140 H, -1116 H, -1092 H, -1067 H, -1043 H, -1019 H, 
+     -994 H,  -970 H,  -946 H,  -921 H,  -897 H,  -872 H,  -848 H,  -823 H, 
+     -798 H,  -774 H,  -749 H,  -724 H,  -700 H,  -675 H,  -650 H,  -625 H,  
+     -600 H,  -575 H,  -551 H,  -526 H,  -501 H,  -476 H,  -451 H,  -426 H, 
+     -401 H,  -376 H,  -351 H,  -326 H,  -301 H,  -276 H,  -251 H,  -225 H, 
+     -200 H,  -175 H,  -150 H,  -125 H,  -100 H,   -75 H,   -50 H,   -25 H,
+
+\ The address of the arrays
+: wx[]@ ( offset -- value ) 2 * (wx_wy) + H@ ;
+: wy[]@ ( offset -- value ) 2 * (wx_wy) + 512 + H@ ;
+
+\ ----------------------------------------------------------------------------------------------------------------------
+\ This word can not be a PASM: word, as it defines storage that needs to be persistent
+CORE: butterflyInit ( bx by wx wy -- CogAddrBx )
+	mov	bfWY, kTOS
+	pop  	bfWX
+	pop  	bfBY
+	pop  	bfBX
+	mov   kTOS, #bfBX
+	next
+bfBX  long   0
+bfBY  long   0
+bfWX  long   0
+bfWY  long   0
+bfA   long   0
+bfB   long   0
+bfC   long   0
+bfD   long   0 
+bfK1  long   0
+bfK2  long   0
+bfK3  long   0
+bfTX  long   0
+bfTY  long   0
+bfBX0 long   0
+bfBY0 long   0
+bfBX1 long   0
+bfBY1 long   0
+;
+
+\ butterfly is a reasonably literal translation of butterfly-slow
+\ Making this a PASM: word as opposed to a CORE: costs an extra 140ms on a 1024 point FFT
+CORE: butterfly ( b0 b1 wIndex -- )
+	shl    kTOS, #1		' wIndex * 2 - word index
+	mov    kWk1, kTOS
+	add    kWk1, bfWX
+	rdword bfC,  kWK1
+	shl    bfC,  #16      	' Sign extend 16 bit value to 32 bits
+	sar    bfC,  #16
+
+	mov    kWk1, kTOS
+	add    kWk1, bfWy
+	rdword bfD,  kWK1
+	shl    bfD,  #16      	' Sign extend 16 bit value to 32 bits
+	sar    bfD,  #16
+
+	' Caclulate pointers to X[b1] and Y[b1]
+	pop    kTOS
+	shl	 kTOS,  #2		' * 4 - long index
+	mov    bfBX1, kTOS
+	add	 bfBX1, bfBX
+	mov    bfBY1, kTOS
+	add	 bfBY1, bfBY
+
+	' Caclulate pointers to X[b0] and Y[b0]
+	pop    kTOS
+	shl	 kTOS,  #2
+	mov    bfBX0, kTOS
+	add	 bfBX0, bfBX
+	mov    bfBY0, kTOS
+	add	 bfBY0, bfBY
+
+	' Get X[b1] and Y[b1]
+	rdlong bfA,   bfBX1
+	rdlong bfB,   bfBY1
+
+	' Do complex multiply
+	mov    kTOS,  bfC
+	add    kTOS,  bfD
+	mov    kMUL,  bfA
+	call   #bfMUL
+	sar    kTOS,  #12
+	mov	 bfK1,  kTOS
+
+	mov    kTOS,  bfA
+	add    kTOS,  bfB
+	mov    kMUL,  bfD
+	call   #bfMUL
+	sar    kTOS,  #12
+	mov	 bfK2,  kTOS
+
+	mov    kTOS,  bfB
+	sub    kTOS,  bfA
+	mov    kMUL,  bfC
+	call   #bfMUL
+	sar    kTOS,  #12
+	mov	 bfK3,  kTOS
+
+	mov    bfTX,  bfK1
+	sub    bfTX,  bfK2
+
+	mov    bfTY,  bfK1
+	add    bfTY,  bfK3
+
+	' Accumulate the result into the inplace buffers
+	rdlong kWk1,  bfBX0
+	sub    kWk1,  bfTX
+	wrlong kWk1,  bfBX1
+	add    kWk1,  bfTX
+	add    kWk1,  bfTX
+	wrlong kWk1,  bfBX0
+
+	rdlong kWk1,  bfBY0
+	sub    kWk1,  bfTY
+	wrlong kWk1,  bfBY1
+	add    kWk1,  bfTY
+	add    kWk1,  bfTY
+	wrlong kWk1,  bfBY0
+
+	' The butterfly has flown
+      drop-next
+
+            'Multiply kTOS by kMul with result in kNOS:kTOS
+bfMUL		mov   kWk1, #0
+		abs	kTOS, kTOS  WC
+            muxc  kWk1, #1		' kWk1 will hold the sign of the result
+		abs	kMul, kMul  WC
+  if_c      xor   kWk1, #1
+		mov	kNOS, #0     
+		'Do the multiply
+		mov	kWk2, #32
+		shr	kTOS, #1    WC
+bfm  if_c	add	kNOS, kMul
+		shr	kNOS, #1    WC
+		rcr	kTOS, #1    WC  
+		djnz	kWk2, #bfm
+
+		'Apply sign to the divided result
+		test	kWk1, #1    WZ
+  if_nz	neg	kTOS, kTOS
+bfMUL_RET	ret
+;
+
+VAR32 ta VAR32 tb VAR16 tc VAR16 td
+VAR32 k1 VAR32 k2 VAR32 k3
+VAR32 tx VAR32 ty
+
+: butterfly-slow ( b0 b1 wIndex -- )
+    SWAP >A SWAP >R             \ Put b1 on Aux stack put b0 on Ret stack			
+    A@ bx[] @ ta!               \ Get X[b1]
+    A@ by[] @ tb!
+    DUP wx[]@ tc!               \ Get W[wIndex]
+        wy[]@ td! 
+
+    tc@ td@ + ta@ * 12 ~> k1!   \ Somewhat optimized complex multiply
+    ta@ tb@ + td@ * 12 ~> k2!   \     T = X[b1] * W[wIndex]
+    tb@ ta@ - tc@ * 12 ~> k3!
+    k1@ k2@ - tx!
+    k1@ k3@ + ty!
+
+    R@ bx[] @ k1!
+    R@ by[] @ k2! 
+
+    k1@ tx@ - A@ bx[] !        
+    k2@ ty@ - A> by[] !
+
+    k1@ tx@ + R@ bx[] !
+    k2@ ty@ + R> by[] !
+;
+\ ----------------------------------------------------------------------------------------------------------------------
+
+\ ----------------------------------------------------------------------------------------------------------------------
+VAR16 flightSize  VAR16 noFlights   VAR16 flightIndex
+VAR32 wIndex
+
+: butterflies ( -- )
+    \ Apply FFT butterflies to N complex samples in buffers bx and by, in time decimated order!
+    \ Resulting FFT is produced in bx and by in the correct order.
+    bx >ADDR32 by >ADDR32 (wx_wy) DUP 512 + butterflyInit DROP	
+
+    1 flightSize!
+    FFT_SIZE 2/ noFlights! 
+
+    \ Loop though the decimation levels
+    ( level = ) LOG2_FFT_SIZE 0  DO
+        0 flightIndex!
+        \ Loop through each flight on a level
+        ( flight = ) noFlights@ 0 DO
+            0 wIndex!
+            \ Loop through butterflies within a flight.
+            ( butterfly = ) flightSize@ 0 DO
+                flightIndex@ i + DUP ( -> b0 )
+                flightSize@ +  ( -> b1 )
+                wIndex@
+                \ At last...the butterfly.
+                butterfly ( butterfly-slow ) \ asm or forth-only butterfly 
+
+                wIndex@ noFlights@ + wIndex!
+            LOOP
+            flightIndex@  flightSize@ 2* + flightIndex!
+        LOOP
+        flightSize@ 2* flightSize!
+        noFlights@ 2/ noFlights!
+    LOOP
+;
+\ ----------------------------------------------------------------------------------------------------------------------
+
+\ ----------------------------------------------------------------------------------------------------------------------
+: do_fft ( -- )
+    \ Radix-2 Decimation In Time, the bit-reversal step.
+    decimate
+    \ The actual Fourier transform work.
+    butterflies
+;
+\ ----------------------------------------------------------------------------------------------------------------------
+ 
+\ ----------------------------------------------------------------------------------------------------------------------
+: TimeIt ( i*n func_ptr -- j*n elapsed_time ) \ Helper function
+    CNT L@ >R EXECUTE CNT L@ R> -
+; 
+\ ----------------------------------------------------------------------------------------------------------------------
+
+\ ----------------------------------------------------------------------------------------------------------------------
+: fft_bench ( -- )
+    \ Set up the serial port
+    31 30 115200 ss.start
+    ." Press a key ..." 
+    ss.I/O KEY CRLF
+
+    ." FFT_Bench v1.0" CRLF	
+
+    ." Initialise Data" CRLF 
+    fillInput
+
+    ." Do FFT" CRLF	
+    ['] do_fft TimeIt
+
+    ." Print Spectrum" CRLF
+    printSpectrum
+
+    ." 1024 point bit-reversal and butterfly run time = " 80_000 / . ." ms" CRLF
+    BYE
+; 0 0 SPIN
+\ ----------------------------------------------------------------------------------------------------------------------
+
+\ ----------------------------------------------------------------------------------------------------------------------
+\    This file is distributed under the terms of the The MIT License as follows:
+\
+\    Copyright (c) 2011 Michael Rychlik
+\
+\    Permission is hereby granted, free of charge, to any person obtaining a copy
+\    of this software and associated documentation files (the "Software"), to deal
+\    in the Software without restriction, including without limitation the rights
+\    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+\    copies of the Software, and to permit persons to whom the Software is
+\    furnished to do so, subject to the following conditions:
+\
+\    The above copyright notice and this permission notice shall be included in
+\    all copies or substantial portions of the Software.
+\
+\    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+\    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+\    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+\    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+\    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+\    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+\    THE SOFTWARE.
+\ ----------------------------------------------------------------------------------------------------------------------
+
