@@ -66,7 +66,7 @@ int rangeError = 0;
 
 static void fillInput();
 static void decimate();
-static void butterflies(int32_t* bx, int32_t* by, int32_t firstLevel, int32_t lastLevel, int32_t slices, int32_t slen);
+void butterflies(int32_t* bx, int32_t* by, int32_t firstLevel, int32_t lastLevel, int32_t slices, int32_t slen);
 static void printSpectrum();
 
 // Return a timestamp in microsecond resolution.
@@ -122,21 +122,21 @@ void fft_bench() {
     fillInput();
 
     // HACK, when playing on a single CPU ensure we have some threads like 4 core
-    omp_set_num_threads(4);
+//    omp_set_num_threads(2);
 
-    // Start benchmark timer
-    startTime = time_us();
 
     // Radix-2 Decimation In Time, the bit-reversal step.
     decimate();
+    // Start benchmark timer
+    startTime = time_us();
 
     //  Our FFT array will be split into slices. each slice can be handled by it's own thread
     //  slices = 1;
     //  lastLevel = LOG2_FFT_SIZE - 1;
-    //  slices = 2;
-    //  lastLevel = LOG2_FFT_SIZE - 2;
-    slices = 4;
-    lastLevel = LOG2_FFT_SIZE - 3;
+      slices = 2;
+      lastLevel = LOG2_FFT_SIZE - 2;
+    //slices = 4;
+    //lastLevel = LOG2_FFT_SIZE - 3;
     //  slices = 8;
     //  lastLevel = LOG2_FFT_SIZE - 4;
     //  slices = 16;
@@ -259,12 +259,12 @@ static void decimate() {
     }
 }
 
-static int16_t *wx;
-static int16_t *wy;
+static int32_t *wx;
+static int32_t *wy;
 
 // Apply FFT butterflies to N complex samples in buffers bx and by, in time decimated order!
 // Resulting FFT is produced in bx and by in the correct order.
-static void butterflies(int32_t* bx, int32_t* by, int32_t firstLevel, int32_t lastLevel, int32_t slices, int32_t slen) {
+void butterflies(int32_t* bx, int32_t* by, int32_t firstLevel, int32_t lastLevel, int32_t slices, int32_t slen) {
 
     int32_t flightSize = 1 << firstLevel;
     int32_t wDelta = FFT_SIZE / (2 * (1 << firstLevel));
@@ -332,7 +332,7 @@ int main(int argc, char* argv[]) {
 }
 
 // Cosine from 0 to 3π/2 (0 to 270 degrees)
-static int16_t cos[768] = {
+static int32_t cos[768] = {
     4095,  4094,  4094,  4094,  4093,  4093,  4092,  4091,  4090,  4088,  4087,  4085,  4083,  4081,  4079,  4077,
     4075,  4072,  4070,  4067,  4064,  4061,  4057,  4054,  4050,  4046,  4042,  4038,  4034,  4030,  4025,  4021,
     4016,  4011,  4006,  4000,  3995,  3989,  3984,  3978,  3972,  3966,  3959,  3953,  3946,  3939,  3932,  3925,
@@ -384,10 +384,10 @@ static int16_t cos[768] = {
 };
 
 // Half cycle of cos
-static int16_t *wx = &cos[0];
+static int32_t *wx = &cos[0];
 
 // Half cycle of minus sine
-static int16_t *wy = &cos[256];
+static int32_t *wy = &cos[256];
 
 //    This file is distributed under the terms of the The MIT License as follows:
 //
