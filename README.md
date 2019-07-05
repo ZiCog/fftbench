@@ -9,7 +9,11 @@ Muliple cores are used where possible, up to 16, thanks to OpenMP.
 
 Compile the C version like so:
 
-    $ gcc -std=c99 -fopenmp -O3 -o fftbench fftbench.c
+    $ gcc -Wall -std=c99 -fopenmp -O3 -o fftbench fftbench.c
+
+Or without OpenMP like so:
+
+    $ gcc -Wall -std=c99 -O3 -o fftbench fftbench.c
 
 This may not be the smartest, fastest implementation but it has been used in benchmarking compilers/MCUs 
 like GCC and Catalina C for the Propeller, Propeller Spin and PASM, XC for XMOS and so on.

@@ -35,7 +35,8 @@
 //
 
 #include <stdio.h>
-#include <sys/time.h>
+#include <time.h>
+#include <inttypes.h>
 
 #ifdef _OPENMP
 // Only include omp if it is available
@@ -69,17 +70,11 @@ static void decimate();
 void butterflies(int32_t* bx, int32_t* by, int32_t firstLevel, int32_t lastLevel, int32_t slices, int32_t slen);
 static void printSpectrum();
 
-// Return a timestamp in microsecond resolution.
-long long time_us() {
-    struct timeval timeval;
-
-    if (gettimeofday(&timeval, 0) == 0) {
-        return ((timeval.tv_sec * 1000000) + timeval.tv_usec);
-
-    }
-    else {
-        return(0);
-    }
+// Return a timestamp in nanosecond resolution.
+uint64_t time_ns( void ) {
+  struct timespec now;
+  clock_gettime( CLOCK_MONOTONIC, &now );
+  return (uint64_t)now.tv_sec * UINT64_C(1000000000) + (uint64_t)now.tv_nsec;
 }
 
 void print_omp_version() {
@@ -106,8 +101,7 @@ void print_omp_version() {
 }
 
 void fft_bench() {
-    long long startTime, endTime;
-    int tid;
+    long startTime, endTime;
     int s, slen;
     int firstLevel;
     int lastLevel;
@@ -121,11 +115,8 @@ void fft_bench() {
     // Input some data
     fillInput();
 
-    // HACK, when playing on a single CPU ensure we have some threads like 4 core
-//    omp_set_num_threads(2);
-
     // Start benchmark timer
-    startTime = time_us();
+    startTime = time_ns();
 
     // Radix-2 Decimation In Time, the bit-reversal step.
     decimate();
@@ -144,10 +135,12 @@ void fft_bench() {
 
     firstLevel = 0;
     for ( ; slices >= 1; slices = slices / 2) {
+#ifdef _OPENMP
         #pragma omp parallel for default (none) \
             shared (bx, by) \
-            private (slice, s, slen, tid) \
+            private (slice, s, slen) \
                 firstprivate(slices, firstLevel, lastLevel)
+#endif
         for (slice = 0; slice < slices; slice++) {
             s = FFT_SIZE * slice / slices;
             slen = FFT_SIZE / slices;
@@ -160,12 +153,12 @@ void fft_bench() {
     if (rangeError) printf ("Error: Array bounds violation\n");
 
     // Stop benchmark timer
-    endTime = time_us();
+    endTime = time_ns();
 
     // Print resulting spectrum
     printSpectrum();
 
-    printf ("1024 point bit-reversal and butterfly run time = %d us\n", endTime - startTime);
+    printf ("1024 point bit-reversal and butterfly run time = %" PRIu64 "us\n", (endTime - startTime) / 1000U);
 }
 
 // Integer square root
