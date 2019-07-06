@@ -101,7 +101,7 @@ void print_omp_version() {
 }
 
 void fft_bench() {
-    long startTime, endTime;
+    uint64_t startTime, endTime;
     int s, slen;
     int firstLevel;
     int lastLevel;
@@ -124,8 +124,8 @@ void fft_bench() {
     //  Our FFT array will be split into slices. each slice can be handled by it's own thread
     //  slices = 1;
     //  lastLevel = LOG2_FFT_SIZE - 1;
-      slices = 2;
-      lastLevel = LOG2_FFT_SIZE - 2;
+    slices = 2;
+    lastLevel = LOG2_FFT_SIZE - 2;
     //slices = 4;
     //lastLevel = LOG2_FFT_SIZE - 3;
     //  slices = 8;
@@ -292,7 +292,7 @@ void butterflies(int32_t* bx, int32_t* by, int32_t firstLevel, int32_t lastLevel
 
                 // Somewhat optimized complex multiply
                 int32_t k1 = (a * (c + d)) >> 12;
-                //     T = X[b1] * W[wIndex]
+                // T = X[b1] * W[wIndex]
                 int32_t k2 = (d * (a + b)) >> 12;
                 int32_t k3 = (c * (b - a)) >> 12;
 
