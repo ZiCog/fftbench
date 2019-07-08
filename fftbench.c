@@ -320,7 +320,9 @@ void butterflies(int32_t* bx, int32_t* by, int32_t firstLevel, int32_t lastLevel
 }
 
 int main(int argc, char* argv[]) {
-    fft_bench();
+    for (int i = 0; i < 1000; i++) {
+        fft_bench();
+    }
     return(0);
 }
 
