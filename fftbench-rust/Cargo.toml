@@ -9,3 +9,9 @@ edition = "2018"
 [dependencies]
 time = "0.1"
 
+[profile.release]
+overflow-checks = false
+
+# Required as workaround for rustc crash on Raspbian
+codegen-units = 1
+
