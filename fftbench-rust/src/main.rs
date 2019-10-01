@@ -1,5 +1,8 @@
 mod fftbench;
 
 fn main() {
-    fftbench::fft_bench();
+    for n in 0..10 {
+        fftbench::fft_bench();
+    }
 }
+
